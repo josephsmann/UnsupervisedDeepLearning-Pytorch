@@ -89,6 +89,7 @@ class StackedDAE(nn.Module):
         valoader = validloader
         daeLayers = []
         for l in range(1, len(self.layers)):
+            print("l is ", l)
             infeatures = self.layers[l-1]
             outfeatures = self.layers[l]
             dae = DenoisingAutoencoder(infeatures, outfeatures, activation=self.activation, dropout=self.dropout)

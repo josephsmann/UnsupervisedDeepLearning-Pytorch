@@ -1,3 +1,5 @@
+#import sys
+#sys.path.insert()
 import torch
 import torch.nn as nn
 from torch.nn import Parameter
@@ -36,8 +38,11 @@ class StackedDAE(nn.Module):
         self.dropout = dropout
         self.encoder = buildNetwork([input_dim] + encodeLayer, activation=activation, dropout=dropout)
         self.decoder = buildNetwork([z_dim] + decodeLayer, activation=activation, dropout=dropout)
+        
+        # _enc_mu is last layer before z
         self._enc_mu = nn.Linear(encodeLayer[-1], z_dim)
         
+        # _dec is last decoding layer (see decode for confirmation)
         self._dec = nn.Linear(decodeLayer[-1], input_dim)
         self._dec_act = None
         if binary:
@@ -73,10 +78,18 @@ class StackedDAE(nn.Module):
         self.load_state_dict(model_dict)
 
     def pretrain(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=10, corrupt=0.3, loss_type="cross-entropy"):
+        """
+        call this to 
+        great use of on-the-fly Dataset/DataLoader 
+        
+        valoader and trloader are redefined for each layer
+        """
+        # initialialize trloader and valoader
         trloader = trainloader
         valoader = validloader
         daeLayers = []
         for l in range(1, len(self.layers)):
+            print("l is ", l)
             infeatures = self.layers[l-1]
             outfeatures = self.layers[l]
             dae = DenoisingAutoencoder(infeatures, outfeatures, activation=self.activation, dropout=self.dropout)
@@ -100,6 +113,9 @@ class StackedDAE(nn.Module):
         self.copyParam(daeLayers)
 
     def copyParam(self, daeLayers):
+        """
+            daeLayers is a list of dae 
+        """
         if self.dropout==0:
             every = 2
         else:

@@ -66,7 +66,7 @@ class DenoisingAutoencoder(nn.Module):
         """
         use_cuda = torch.cuda.is_available()
         encoded = []
-        for batch_idx, (inputs, _) in enumerate(dataloader):
+        for batch_idx, inputs in enumerate(dataloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
