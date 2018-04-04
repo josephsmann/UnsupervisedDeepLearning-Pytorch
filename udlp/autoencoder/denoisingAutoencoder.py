@@ -12,9 +12,13 @@ import math
 from udlp.utils import Dataset, masking_noise
 from udlp.ops import MSELoss, BCELoss
 
+## interesting example in that it doesn't use nn.Linear etc
 class DenoisingAutoencoder(nn.Module):
     def __init__(self, in_features, out_features, activation="relu", 
         dropout=0.2, tied=False):
+        ## this is simply a more generic way of initializing parent
+        ## could have used 
+        ## super(DenoisingAutoencoder,self).__init__()
         super(self.__class__, self).__init__()
         self.weight = Parameter(torch.Tensor(out_features, in_features))
         if tied:
@@ -33,6 +37,9 @@ class DenoisingAutoencoder(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        """
+            reset the weights to random uniform based on the size of 'weight' and 'deweight'
+        """
         stdv = 1. / math.sqrt(self.weight.size(1))
         self.weight.data.uniform_(-stdv, stdv)
         self.bias.data.uniform_(-stdv, stdv)
@@ -51,6 +58,12 @@ class DenoisingAutoencoder(nn.Module):
         return self.dropout(self.enc_act_func(F.linear(x, self.weight, self.bias)))
 
     def encodeBatch(self, dataloader):
+        """
+            external method
+            used in pretrain method of StackedDAE
+            - does _not_ train the net..
+            
+        """
         use_cuda = torch.cuda.is_available()
         encoded = []
         for batch_idx, (inputs, _) in enumerate(dataloader):
@@ -87,6 +100,7 @@ class DenoisingAutoencoder(nn.Module):
             criterion = BCELoss()
 
         # validate
+        ## with untrained net just to see what we're starting with (see "#Epoch 0" below)
         total_loss = 0.0
         total_num = 0
         for batch_idx, (inputs, _) in enumerate(validloader):
@@ -126,11 +140,14 @@ class DenoisingAutoencoder(nn.Module):
                 else:
                     outputs = self.decode(hidden)
                 recon_loss = criterion(outputs, inputs)
+                ## we multiply the recon_loss by the len(inputs)because the
+                ## batch length may vary within the epoch
                 train_loss += recon_loss.data[0]*len(inputs)
                 recon_loss.backward()
                 optimizer.step()
 
             # validate
+            # - no training here, all forward. and fresh data 
             valid_loss = 0.0
             for batch_idx, (inputs, _) in enumerate(validloader):
                 inputs = inputs.view(inputs.size(0), -1).float()

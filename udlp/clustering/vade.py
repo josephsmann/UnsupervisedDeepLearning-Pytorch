@@ -1,3 +1,4 @@
+### is there no gpu built in here???
 import torch
 import torch.nn as nn
 from torch.nn import Parameter
@@ -70,10 +71,16 @@ class VaDE(nn.Module):
         self.lambda_p = nn.Parameter(torch.ones(z_dim, n_centroids))
 
     def initialize_gmm(self, dataloader):
+        """
+        after VaDE object is initialized the user calls this, 
+        and then the fit method
+        
+        """
         use_cuda = torch.cuda.is_available()
         if use_cuda:
             self.cuda()
-
+        
+        # puts the module in eval mode
         self.eval()
         data = []
         for batch_idx, (inputs, _) in enumerate(dataloader):
@@ -82,7 +89,12 @@ class VaDE(nn.Module):
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)
+            
+            # i think this moves data back to cpu memory?
+            # and appends it to the data list
             data.append(z.data.cpu().numpy())
+
+        # thought I understood this, but I don't
         data = np.concatenate(data)
         gmm = GaussianMixture(n_components=self.n_centroids,covariance_type='diag')
         gmm.fit(data)
@@ -90,8 +102,13 @@ class VaDE(nn.Module):
         self.lambda_p.data.copy_(torch.from_numpy(gmm.covariances_.T.astype(np.float32)))
 
     def reparameterize(self, mu, logvar):
+        """
+        interestingly, we add noise (eps.mul(std).add_(mu)) only during training  
+        """
         if self.training:
+          # var = \sigma^2 so exp(0.5 log var) = exp(0.5 2 log std) = std
           std = logvar.mul(0.5).exp_()
+
           eps = Variable(std.data.new(std.size()).normal_())
           # num = np.array([[ 1.096506  ,  0.3686553 , -0.43172026,  1.27677995,  1.26733758,
           #       1.30626082,  0.14179629,  0.58619505, -0.76423112,  2.67965817]], dtype=np.float32)
@@ -102,6 +119,10 @@ class VaDE(nn.Module):
           return mu
 
     def decode(self, z):
+        """
+        this is our f(z,\theta) 
+        ? why does _dec(h) exist? 
+        """
         h = self.decoder(z)
         x = self._dec(h)
         if self._dec_act is not None:
@@ -109,6 +130,9 @@ class VaDE(nn.Module):
         return x
 
     def get_gamma(self, z, z_mean, z_log_var):
+        """
+        gamma is our P(c|x) or something
+        """
         Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
         z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
         z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
@@ -123,6 +147,9 @@ class VaDE(nn.Module):
         return gamma
 
     def loss_function(self, recon_x, x, z, z_mean, z_log_var):
+        """
+        loss_function is the ELBO
+        """
         Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
         z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
         z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
@@ -204,8 +231,12 @@ class VaDE(nn.Module):
 
     def load_model(self, path):
         pretrained_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        
+        # state_dict appears to be a method of nn or super class
         model_dict = self.state_dict()
+        # restrict pretrained_dict to keys that already exist in state_dict
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # update model_dict with pretained_dict values 
         model_dict.update(pretrained_dict) 
         self.load_state_dict(model_dict)
 
@@ -222,7 +253,7 @@ class VaDE(nn.Module):
         valid_loss = 0.0
         for batch_idx, (inputs, _) in enumerate(validloader):
             inputs = inputs.view(inputs.size(0), -1).float()
-            if use_cuda:
+            if use_cuda :
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)

@@ -15,7 +15,7 @@ parser.add_argument('--batch-size', type=int, default=100, metavar='N',
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--pretrain', type=str, default="model/pretrained_vade-3layer.pt", metavar='N',
-                    help='number of epochs to train (default: 10)')
+                    help='************** this needs updating *************************')
 parser.add_argument('--save', type=str, default="", metavar='N',
                     help='number of epochs to train (default: 10)')
 args = parser.parse_args()
@@ -24,12 +24,14 @@ train_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data/mnist', train=True, download=True,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, num_workers=2)
+
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data/mnist', train=False, transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 vade = VaDE(input_dim=784, z_dim=10, n_centroids=10, binary=True,
         encodeLayer=[500,500,2000], decodeLayer=[2000,500,500])
+
 if args.pretrain != "":
     print("Loading model from %s..." % args.pretrain)
     vade.load_model(args.pretrain)
