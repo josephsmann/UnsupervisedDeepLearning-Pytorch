@@ -103,7 +103,7 @@ class DenoisingAutoencoder(nn.Module):
         ## with untrained net just to see what we're starting with (see "#Epoch 0" below)
         total_loss = 0.0
         total_num = 0
-        for batch_idx, (inputs, _) in enumerate(validloader):
+        for batch_idx, inputs in enumerate(validloader): #33
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
@@ -124,7 +124,7 @@ class DenoisingAutoencoder(nn.Module):
         for epoch in range(num_epochs):
             # train 1 epoch
             train_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(trainloader):
+            for batch_idx, inputs  in enumerate(trainloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 inputs_corr = masking_noise(inputs, corrupt)
                 if use_cuda:
@@ -149,7 +149,7 @@ class DenoisingAutoencoder(nn.Module):
             # validate
             # - no training here, all forward. and fresh data 
             valid_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(validloader):
+            for batch_idx, inputs  in enumerate(validloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()

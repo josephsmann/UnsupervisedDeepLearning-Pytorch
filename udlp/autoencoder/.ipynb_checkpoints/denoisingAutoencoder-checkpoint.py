@@ -16,6 +16,9 @@ from udlp.ops import MSELoss, BCELoss
 class DenoisingAutoencoder(nn.Module):
     def __init__(self, in_features, out_features, activation="relu", 
         dropout=0.2, tied=False):
+        ## this is simply a more generic way of initializing parent
+        ## could have used 
+        ## super(DenoisingAutoencoder,self).__init__()
         super(self.__class__, self).__init__()
         self.weight = Parameter(torch.Tensor(out_features, in_features))
         if tied:
@@ -34,6 +37,9 @@ class DenoisingAutoencoder(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        """
+            reset the weights to random uniform based on the size of 'weight' and 'deweight'
+        """
         stdv = 1. / math.sqrt(self.weight.size(1))
         self.weight.data.uniform_(-stdv, stdv)
         self.bias.data.uniform_(-stdv, stdv)
@@ -52,6 +58,12 @@ class DenoisingAutoencoder(nn.Module):
         return self.dropout(self.enc_act_func(F.linear(x, self.weight, self.bias)))
 
     def encodeBatch(self, dataloader):
+        """
+            external method
+            used in pretrain method of StackedDAE
+            - does _not_ train the net..
+            
+        """
         use_cuda = torch.cuda.is_available()
         encoded = []
         for batch_idx, (inputs, _) in enumerate(dataloader):
@@ -91,7 +103,7 @@ class DenoisingAutoencoder(nn.Module):
         ## with untrained net just to see what we're starting with (see "#Epoch 0" below)
         total_loss = 0.0
         total_num = 0
-        for batch_idx, (inputs, _) in enumerate(validloader):
+        for batch_idx, inputs in enumerate(validloader): #33
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
@@ -112,7 +124,7 @@ class DenoisingAutoencoder(nn.Module):
         for epoch in range(num_epochs):
             # train 1 epoch
             train_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(trainloader):
+            for batch_idx, inputs  in enumerate(trainloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 inputs_corr = masking_noise(inputs, corrupt)
                 if use_cuda:
@@ -137,7 +149,7 @@ class DenoisingAutoencoder(nn.Module):
             # validate
             # - no training here, all forward. and fresh data 
             valid_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(validloader):
+            for batch_idx, inputs  in enumerate(validloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
