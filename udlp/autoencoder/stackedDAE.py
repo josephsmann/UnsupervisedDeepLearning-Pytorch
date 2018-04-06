@@ -77,7 +77,7 @@ class StackedDAE(nn.Module):
         model_dict.update(pretrained_dict) 
         self.load_state_dict(model_dict)
 
-    def pretrain(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=10, corrupt=0.3, loss_type="cross-entropy"):
+    def pretrain(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=1, corrupt=0.3, loss_type="cross-entropy"): ## num_epochs was 10
         """
         call this to 
         great use of on-the-fly Dataset/DataLoader 
@@ -102,6 +102,8 @@ class StackedDAE(nn.Module):
                     dae.fit(trloader, valoader, lr=lr, batch_size=batch_size, num_epochs=num_epochs, corrupt=corrupt, loss_type="mse")
             data_x = dae.encodeBatch(trloader)
             valid_x = dae.encodeBatch(valoader)
+            print('type(data_x)', type(data_x))
+            print('type(valid_x)', type(valid_x))
             trainset = Dataset(data_x, data_x)
             trloader = torch.utils.data.DataLoader(
                 trainset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -142,7 +144,7 @@ class StackedDAE(nn.Module):
         self.decoder[0].weight.data.copy_(daeLayers[-1].deweight.data)
         self.decoder[0].bias.data.copy_(daeLayers[-1].vbias.data)
 
-    def fit(self, trainloader, validloader, lr=0.001, num_epochs=10, corrupt=0.3,
+    def fit(self, trainloader, validloader, lr=0.001, num_epochs=1, corrupt=0.3, #num_pochs was 10
         loss_type="mse"):
         """
         data_x: FloatTensor
@@ -161,7 +163,7 @@ class StackedDAE(nn.Module):
         # validate
         total_loss = 0.0
         total_num = 0
-        for batch_idx, (inputs, _) in enumerate(validloader):
+        for batch_idx, inputs in enumerate(validloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
@@ -178,7 +180,7 @@ class StackedDAE(nn.Module):
         for epoch in range(num_epochs):
             # train 1 epoch
             train_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(trainloader):
+            for batch_idx, inputs in enumerate(trainloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 inputs_corr = masking_noise(inputs, corrupt)
                 if use_cuda:
@@ -196,7 +198,7 @@ class StackedDAE(nn.Module):
 
             # validate
             valid_loss = 0.0
-            for batch_idx, (inputs, _) in enumerate(validloader):
+            for batch_idx, inputs in enumerate(validloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()

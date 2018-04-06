@@ -83,7 +83,7 @@ class DenoisingAutoencoder(nn.Module):
         else:
             return F.sigmoid(F.linear(x, self.deweight, self.vbias))
 
-    def fit(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=10, corrupt=0.3,
+    def fit(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=1, corrupt=0.3,
         loss_type="mse"):
         """
         data_x: FloatTensor
@@ -119,7 +119,7 @@ class DenoisingAutoencoder(nn.Module):
             total_num += inputs.size()[0]
 
         valid_loss = total_loss / total_num
-        print("#Epoch 0: Valid Reconstruct Loss: %.3f" % (valid_loss))
+        print("####Epoch 0: Valid Reconstruct Loss: %.3f" % (valid_loss))
 
         for epoch in range(num_epochs):
             # train 1 epoch
