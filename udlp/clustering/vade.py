@@ -70,9 +70,13 @@ class VaDE(nn.Module):
         self.theta_p = nn.Parameter(torch.ones(n_centroids)/n_centroids)
         
         # u_p.size() == [z_dim, n_centroids]
+        # each z_i will have its a u_centroid vector
+    
         self.u_p = nn.Parameter(torch.zeros(z_dim, n_centroids))
         
         # lambda_p.size() == [z_dim, n_controids]
+        # lambda_p are the covariances for the centroids,
+        # each z_i will have variances for each centroid 
         self.lambda_p = nn.Parameter(torch.ones(z_dim, n_centroids))
 
     def initialize_gmm(self, dataloader):
@@ -101,16 +105,22 @@ class VaDE(nn.Module):
             # and appends it to the data list
             data.append(z.data.cpu().numpy())
 
-        # thought I understood this, but I don't
+        
         data = np.concatenate(data)
+        if self.debug:
+            print(f"in initialize_gmm: data.shape = {data.shape}")
         gmm = GaussianMixture(n_components=self.n_centroids,covariance_type='diag')
         gmm.fit(data)
+        # u_p are the means of the centroids [z_dim, num_centroids]
+        # lambda_p are the covariances of the centroids
         self.u_p.data.copy_(torch.from_numpy(gmm.means_.T.astype(np.float32)))
         self.lambda_p.data.copy_(torch.from_numpy(gmm.covariances_.T.astype(np.float32)))
 
     def reparameterize(self, mu, logvar):
         """
         interestingly, we add noise (eps.mul(std).add_(mu)) only during training  
+        if training return a sample from N(mu, exp(logvar))
+        if not return mu
         """
         if self.training:
           # var = \sigma^2 so exp(0.5 log var) = exp(0.5 2 log std) = std
@@ -153,13 +163,15 @@ class VaDE(nn.Module):
 
         return gamma
 
-    def loss_function(self, recon_x, x, z, z_mean, z_log_var):
+    def loss_function(self, recon_x, x, z, z_mean, z_log_var, debug=False):
         """
         loss_function is the ELBO + reconstruction error
         """
         Z = z.unsqueeze(2).expand(-1,-1,self.n_centroids) # this is better
-#        Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
-
+        if debug:
+            Z1 = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
+            assert((Z == Z1).all())
+        
         z_mean_t = z_mean.unsqueeze(2).expand(-1,-1, self.n_centroids)
 #        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
 
@@ -174,13 +186,31 @@ class VaDE(nn.Module):
         
         theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids) # NxK
         
-        p_c_z = torch.exp(torch.log(theta_tensor2) - torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3)+\
-            (Z-u_tensor3)**2/(2*lambda_tensor3), dim=1)) + 1e-10 # NxK
+        pcz1 = torch.log(theta_tensor2) 
+        pcz2_1 = 0.5*torch.log(2*math.pi*lambda_tensor3)
+        pcz2_2 = (Z-u_tensor3)**2/(2*lambda_tensor3)
+        pcz2 = torch.sum( pcz2_1 + pcz2_2, dim=1)
+#        torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3) +
+#                            (Z-u_tensor3)**2/(2*lambda_tensor3), 
+#                                    dim=1)
+        p_c_z = torch.exp(pcz1 - pcz2)
+#        p_c_z = torch.exp(torch.log(theta_tensor2) - 
+#                          torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3) +
+#                            (Z-u_tensor3)**2/(2*lambda_tensor3), 
+#                                    dim=1)) + 1e-10 # NxK
+        if debug:
+            print(f"pcz1 = {pcz1}")
+            print(f"pcz1 - pcz2 {pcz1 - pcz2}")
+            print(f"pcz2 = {pcz2}")
+            print(f"p_c_z = {p_c_z}")
+       
         
         gamma = p_c_z / torch.sum(p_c_z, dim=1, keepdim=True) # NxK
         
-        BCE = -torch.sum(x*torch.log(torch.clamp(recon_x, min=1e-10))+
-            (1-x)*torch.log(torch.clamp(1-recon_x, min=1e-10)), 1)
+        ### PROBLEM: i think we need MSE here??
+#        BCE = -torch.sum(x*torch.log(torch.clamp(recon_x, min=1e-10))+
+#            (1-x)*torch.log(torch.clamp(1-recon_x, min=1e-10)), 1)
+        SSE = torch.mean( (x - recon_x)**2, 1 )
         
         logpzc = torch.sum(0.5*gamma*torch.sum(math.log(2*math.pi)+ torch.log(lambda_tensor3)+
                                             torch.exp(z_log_var_t)/lambda_tensor3 + 
@@ -196,7 +226,14 @@ class VaDE(nn.Module):
         
 
         # Normalise by same number of elements as in reconstruction
-        loss = torch.mean(BCE + logpzc + qentropy + logpc + logqcx)
+        if debug:
+            print(f"x.size() = {x.size()}")
+            print(f"SSE = {SSE}")
+            print(f"logpzc = {logpzc}")
+            print(f"qentropy = {qentropy}")
+            print(f"logpc = {logpc}")
+            print(f"logqcx = {logqcx}")
+        loss = torch.mean(SSE + logpzc + qentropy + logpc + logqcx)
 
         return loss
 
@@ -284,7 +321,7 @@ class VaDE(nn.Module):
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)
 
-            loss = self.loss_function(outputs, inputs, z, mu, logvar)
+            loss = self.loss_function(outputs, inputs, z, mu, logvar, debug=True)
             valid_loss += loss.data[0]*len(inputs)
             # total_loss += valid_recon_loss.data[0] * inputs.size()[0]
             # total_num += inputs.size()[0]
