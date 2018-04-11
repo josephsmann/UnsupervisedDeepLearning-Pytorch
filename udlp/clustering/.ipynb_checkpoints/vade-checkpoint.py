@@ -1,3 +1,4 @@
+### is there no gpu built in here???
 import torch
 import torch.nn as nn
 from torch.nn import Parameter
@@ -74,7 +75,6 @@ class VaDE(nn.Module):
         after VaDE object is initialized the user calls this, 
         and then the fit method
         
-        in the paper they mentioned some "pre-training". this is that.
         """
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -83,13 +83,18 @@ class VaDE(nn.Module):
         # puts the module in eval mode
         self.eval()
         data = []
-        for batch_idx, (inputs, _) in enumerate(dataloader):
+        for batch_idx, inputs in enumerate(dataloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)
+            
+            # i think this moves data back to cpu memory?
+            # and appends it to the data list
             data.append(z.data.cpu().numpy())
+
+        # thought I understood this, but I don't
         data = np.concatenate(data)
         gmm = GaussianMixture(n_components=self.n_centroids,covariance_type='diag')
         gmm.fit(data)
@@ -98,7 +103,7 @@ class VaDE(nn.Module):
 
     def reparameterize(self, mu, logvar):
         """
-        interestingly, we only add noise (eps.mul(std).add_(mu)) during training  
+        interestingly, we add noise (eps.mul(std).add_(mu)) only during training  
         """
         if self.training:
           # var = \sigma^2 so exp(0.5 log var) = exp(0.5 2 log std) = std
@@ -226,8 +231,12 @@ class VaDE(nn.Module):
 
     def load_model(self, path):
         pretrained_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        
+        # state_dict appears to be a method of nn or super class
         model_dict = self.state_dict()
+        # restrict pretrained_dict to keys that already exist in state_dict
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # update model_dict with pretained_dict values 
         model_dict.update(pretrained_dict) 
         self.load_state_dict(model_dict)
 
@@ -242,7 +251,7 @@ class VaDE(nn.Module):
         # validate
         self.eval()
         valid_loss = 0.0
-        for batch_idx, (inputs, _) in enumerate(validloader):
+        for batch_idx, inputs in enumerate(validloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda :
                 inputs = inputs.cuda()
@@ -263,7 +272,7 @@ class VaDE(nn.Module):
             if anneal:
                 epoch_lr = adjust_learning_rate(lr, optimizer, epoch)
             train_loss = 0
-            for batch_idx, (inputs, _) in enumerate(trainloader):
+            for batch_idx, inputs in enumerate(trainloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
@@ -283,7 +292,7 @@ class VaDE(nn.Module):
             valid_loss = 0.0
             Y = []
             Y_pred = []
-            for batch_idx, (inputs, labels) in enumerate(validloader):
+            for batch_idx, inputs in enumerate(validloader): # remove labels
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
@@ -295,8 +304,8 @@ class VaDE(nn.Module):
                 # total_loss += valid_recon_loss.data[0] * inputs.size()[0]
                 # total_num += inputs.size()[0]
                 gamma = self.get_gamma(z, mu, logvar).data.cpu().numpy()
-                Y.append(labels.numpy())
-                Y_pred.append(np.argmax(gamma, axis=1))
+#                Y.append(labels.numpy())
+#                Y_pred.append(np.argmax(gamma, axis=1))
 
                 # view reconstruct
                 if visualize and batch_idx == 0:
@@ -306,12 +315,12 @@ class VaDE(nn.Module):
                     save_image(comparison.data.cpu(),
                                  'results/vae/reconstruct/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-            Y = np.concatenate(Y)
-            Y_pred = np.concatenate(Y_pred)
-            acc = cluster_acc(Y_pred, Y)
+#            Y = np.concatenate(Y)
+#            Y_pred = np.concatenate(Y_pred)
+#            acc = cluster_acc(Y_pred, Y)
             # valid_loss = total_loss / total_num
             print("#Epoch %3d: lr: %.5f, Train Loss: %.5f, Valid Loss: %.5f, acc: %.5f" % (
-                epoch, epoch_lr, train_loss / len(trainloader.dataset), valid_loss / len(validloader.dataset), acc[0]))
+                epoch, epoch_lr, train_loss / len(trainloader.dataset), valid_loss / len(validloader.dataset), 0)) # acc[0]
 
             # view sample
             if visualize:

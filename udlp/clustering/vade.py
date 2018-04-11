@@ -83,7 +83,7 @@ class VaDE(nn.Module):
         # puts the module in eval mode
         self.eval()
         data = []
-        for batch_idx, (inputs, _) in enumerate(dataloader):
+        for batch_idx, inputs in enumerate(dataloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
@@ -251,7 +251,7 @@ class VaDE(nn.Module):
         # validate
         self.eval()
         valid_loss = 0.0
-        for batch_idx, (inputs, _) in enumerate(validloader):
+        for batch_idx, inputs in enumerate(validloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda :
                 inputs = inputs.cuda()
@@ -272,7 +272,7 @@ class VaDE(nn.Module):
             if anneal:
                 epoch_lr = adjust_learning_rate(lr, optimizer, epoch)
             train_loss = 0
-            for batch_idx, (inputs, _) in enumerate(trainloader):
+            for batch_idx, inputs in enumerate(trainloader):
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
@@ -292,7 +292,7 @@ class VaDE(nn.Module):
             valid_loss = 0.0
             Y = []
             Y_pred = []
-            for batch_idx, (inputs, labels) in enumerate(validloader):
+            for batch_idx, inputs in enumerate(validloader): # remove labels
                 inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
@@ -304,8 +304,8 @@ class VaDE(nn.Module):
                 # total_loss += valid_recon_loss.data[0] * inputs.size()[0]
                 # total_num += inputs.size()[0]
                 gamma = self.get_gamma(z, mu, logvar).data.cpu().numpy()
-                Y.append(labels.numpy())
-                Y_pred.append(np.argmax(gamma, axis=1))
+#                Y.append(labels.numpy())
+#                Y_pred.append(np.argmax(gamma, axis=1))
 
                 # view reconstruct
                 if visualize and batch_idx == 0:
@@ -315,12 +315,12 @@ class VaDE(nn.Module):
                     save_image(comparison.data.cpu(),
                                  'results/vae/reconstruct/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-            Y = np.concatenate(Y)
-            Y_pred = np.concatenate(Y_pred)
-            acc = cluster_acc(Y_pred, Y)
+#            Y = np.concatenate(Y)
+#            Y_pred = np.concatenate(Y_pred)
+#            acc = cluster_acc(Y_pred, Y)
             # valid_loss = total_loss / total_num
             print("#Epoch %3d: lr: %.5f, Train Loss: %.5f, Valid Loss: %.5f, acc: %.5f" % (
-                epoch, epoch_lr, train_loss / len(trainloader.dataset), valid_loss / len(validloader.dataset), acc[0]))
+                epoch, epoch_lr, train_loss / len(trainloader.dataset), valid_loss / len(validloader.dataset), 0)) # acc[0]
 
             # view sample
             if visualize:
