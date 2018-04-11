@@ -66,14 +66,21 @@ class VaDE(nn.Module):
         self.create_gmmparam(n_centroids, z_dim)
 
     def create_gmmparam(self, n_centroids, z_dim):
+        # theta.size() == [n_centroids]
         self.theta_p = nn.Parameter(torch.ones(n_centroids)/n_centroids)
+        
+        # u_p.size() == [z_dim, n_centroids]
         self.u_p = nn.Parameter(torch.zeros(z_dim, n_centroids))
+        
+        # lambda_p.size() == [z_dim, n_controids]
         self.lambda_p = nn.Parameter(torch.ones(z_dim, n_centroids))
 
     def initialize_gmm(self, dataloader):
         """
         after VaDE object is initialized the user calls this, 
         and then the fit method
+        
+        gmm need to be initialized properly to get them to grow properly
         
         """
         use_cuda = torch.cuda.is_available()
@@ -148,26 +155,45 @@ class VaDE(nn.Module):
 
     def loss_function(self, recon_x, x, z, z_mean, z_log_var):
         """
-        loss_function is the ELBO
+        loss_function is the ELBO + reconstruction error
         """
-        Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
-        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
-        z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
-        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
-        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
+        Z = z.unsqueeze(2).expand(-1,-1,self.n_centroids) # this is better
+#        Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
+
+        z_mean_t = z_mean.unsqueeze(2).expand(-1,-1, self.n_centroids)
+#        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
+
+        z_log_var_t = z_log_var.unsqueeze(2).expand(-1,-1, self.n_centroids)
+#       z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
+
+        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size(0), -1, -1) # NxDxK
+#        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
+    
+        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size(0), -1, -1)
+#        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
+        
         theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids) # NxK
         
         p_c_z = torch.exp(torch.log(theta_tensor2) - torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3)+\
             (Z-u_tensor3)**2/(2*lambda_tensor3), dim=1)) + 1e-10 # NxK
+        
         gamma = p_c_z / torch.sum(p_c_z, dim=1, keepdim=True) # NxK
         
         BCE = -torch.sum(x*torch.log(torch.clamp(recon_x, min=1e-10))+
             (1-x)*torch.log(torch.clamp(1-recon_x, min=1e-10)), 1)
-        logpzc = torch.sum(0.5*gamma*torch.sum(math.log(2*math.pi)+torch.log(lambda_tensor3)+\
-            torch.exp(z_log_var_t)/lambda_tensor3 + (z_mean_t-u_tensor3)**2/lambda_tensor3, dim=1), dim=1)
+        
+        logpzc = torch.sum(0.5*gamma*torch.sum(math.log(2*math.pi)+ torch.log(lambda_tensor3)+
+                                            torch.exp(z_log_var_t)/lambda_tensor3 + 
+                                            (z_mean_t-u_tensor3)**2/lambda_tensor3, 
+                                               dim=1), 
+                           dim=1)
+        
         qentropy = -0.5*torch.sum(1+z_log_var+math.log(2*math.pi), 1)
+        
         logpc = -torch.sum(torch.log(theta_tensor2)*gamma, 1)
+        
         logqcx = torch.sum(torch.log(gamma)*gamma, 1)
+        
 
         # Normalise by same number of elements as in reconstruction
         loss = torch.mean(BCE + logpzc + qentropy + logpc + logqcx)

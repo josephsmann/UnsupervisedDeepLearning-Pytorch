@@ -1,3 +1,4 @@
+### is there no gpu built in here???
 import torch
 import torch.nn as nn
 from torch.nn import Parameter
@@ -65,8 +66,13 @@ class VaDE(nn.Module):
         self.create_gmmparam(n_centroids, z_dim)
 
     def create_gmmparam(self, n_centroids, z_dim):
+        # theta.size() == [n_centroids]
         self.theta_p = nn.Parameter(torch.ones(n_centroids)/n_centroids)
+        
+        # u_p.size() == [z_dim, n_centroids]
         self.u_p = nn.Parameter(torch.zeros(z_dim, n_centroids))
+        
+        # lambda_p.size() == [z_dim, n_controids]
         self.lambda_p = nn.Parameter(torch.ones(z_dim, n_centroids))
 
     def initialize_gmm(self, dataloader):
@@ -74,7 +80,8 @@ class VaDE(nn.Module):
         after VaDE object is initialized the user calls this, 
         and then the fit method
         
-        in the paper they mentioned some "pre-training". this is that.
+        gmm need to be initialized properly to get them to grow properly
+        
         """
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -89,7 +96,12 @@ class VaDE(nn.Module):
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)
+            
+            # i think this moves data back to cpu memory?
+            # and appends it to the data list
             data.append(z.data.cpu().numpy())
+
+        # thought I understood this, but I don't
         data = np.concatenate(data)
         gmm = GaussianMixture(n_components=self.n_centroids,covariance_type='diag')
         gmm.fit(data)
@@ -98,7 +110,7 @@ class VaDE(nn.Module):
 
     def reparameterize(self, mu, logvar):
         """
-        interestingly, we only add noise (eps.mul(std).add_(mu)) during training  
+        interestingly, we add noise (eps.mul(std).add_(mu)) only during training  
         """
         if self.training:
           # var = \sigma^2 so exp(0.5 log var) = exp(0.5 2 log std) = std
@@ -143,26 +155,45 @@ class VaDE(nn.Module):
 
     def loss_function(self, recon_x, x, z, z_mean, z_log_var):
         """
-        loss_function is the ELBO
+        loss_function is the ELBO + reconstruction error
         """
-        Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
-        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
-        z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
-        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
-        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
+        Z = z.unsqueeze(2).expand(-1,-1,self.n_centroids) # this is better
+#        Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
+
+        z_mean_t = z_mean.unsqueeze(2).expand(-1,-1, self.n_centroids)
+#        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
+
+        z_log_var_t = z_log_var.unsqueeze(2).expand(-1,-1, self.n_centroids)
+#       z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
+
+        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size(0), -1, -1) # NxDxK
+#        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
+    
+        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size(0), -1, -1)
+#        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
+        
         theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids) # NxK
         
         p_c_z = torch.exp(torch.log(theta_tensor2) - torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3)+\
             (Z-u_tensor3)**2/(2*lambda_tensor3), dim=1)) + 1e-10 # NxK
+        
         gamma = p_c_z / torch.sum(p_c_z, dim=1, keepdim=True) # NxK
         
         BCE = -torch.sum(x*torch.log(torch.clamp(recon_x, min=1e-10))+
             (1-x)*torch.log(torch.clamp(1-recon_x, min=1e-10)), 1)
-        logpzc = torch.sum(0.5*gamma*torch.sum(math.log(2*math.pi)+torch.log(lambda_tensor3)+\
-            torch.exp(z_log_var_t)/lambda_tensor3 + (z_mean_t-u_tensor3)**2/lambda_tensor3, dim=1), dim=1)
+        
+        logpzc = torch.sum(0.5*gamma*torch.sum(math.log(2*math.pi)+ torch.log(lambda_tensor3)+
+                                            torch.exp(z_log_var_t)/lambda_tensor3 + 
+                                            (z_mean_t-u_tensor3)**2/lambda_tensor3, 
+                                               dim=1), 
+                           dim=1)
+        
         qentropy = -0.5*torch.sum(1+z_log_var+math.log(2*math.pi), 1)
+        
         logpc = -torch.sum(torch.log(theta_tensor2)*gamma, 1)
+        
         logqcx = torch.sum(torch.log(gamma)*gamma, 1)
+        
 
         # Normalise by same number of elements as in reconstruction
         loss = torch.mean(BCE + logpzc + qentropy + logpc + logqcx)
@@ -226,8 +257,12 @@ class VaDE(nn.Module):
 
     def load_model(self, path):
         pretrained_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        
+        # state_dict appears to be a method of nn or super class
         model_dict = self.state_dict()
+        # restrict pretrained_dict to keys that already exist in state_dict
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # update model_dict with pretained_dict values 
         model_dict.update(pretrained_dict) 
         self.load_state_dict(model_dict)
 
