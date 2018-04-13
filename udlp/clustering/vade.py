@@ -132,7 +132,7 @@ class VaDE(nn.Module):
         # u_p are the means of the centroids [z_dim, num_centroids]
         # lambda_p are the covariances of the centroids
         
-        # gmm should return a matrix (features x centroids) x [mean, Sigma]
+        # gmm should return a matrix (features x centroids) x [mean, Sigma]:
         
         self.u_p.data.copy_(torch.from_numpy(gmm.means_.T.astype(np.float32)))
         self.lambda_p.data.copy_(torch.from_numpy(gmm.covariances_.T.astype(np.float32)))
@@ -141,6 +141,8 @@ class VaDE(nn.Module):
             print(f"self.u_p = {self.u_p.shape}")
 #            print(f"self.u_p = {self.u_p.shape}")
             print(f"self.u_p = {self.u_p}")
+            return data 
+        
             
     def reparameterize(self, mu, logvar):
         """
@@ -176,8 +178,8 @@ class VaDE(nn.Module):
         """
         gamma is our P(c|x) or something
         """
-        for k,v in zip("z z_mean z_log_var".split( ),[z, z_mean, z_log_var]):
-            print(k + " size() = ", v.size())
+        #for k,v in zip("z z_mean z_log_var".split( ),[z, z_mean, z_log_var]):
+            #print(k + " size() = ", v.size())
         Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
         z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
         z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
@@ -199,30 +201,30 @@ class VaDE(nn.Module):
         lambda_p are the centroid variances
         """
         Z = z.unsqueeze(2).expand(-1,-1,self.n_centroids) # this is better
-        print(f'Z shape {Z.size()}')
-        print('Z', Z)
-        if debug:
+        #print(f'Z shape {Z.size()}')
+        #print('Z', Z)
+        if self.debug:
             Z1 = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
             assert((Z == Z1).all())
         
         z_mean_t = z_mean.unsqueeze(2).expand(-1,-1, self.n_centroids)
-        print(f'z_mean size {z_mean.size()}')
+        #print(f'z_mean size {z_mean.size()}')
 #        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
 
         z_log_var_t = z_log_var.unsqueeze(2).expand(-1,-1, self.n_centroids)
-        print(f'z_log_var size: {z_log_var.size()}')
+        #print(f'z_log_var size: {z_log_var.size()}')
 #       z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
 
         u_tensor3 = self.u_p.unsqueeze(0).expand(z.size(0), -1, -1) # NxDxK
 #        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
-        print(f'u_tensor3 size: {u_tensor3.size()}')
-        print('u_p', self.u_p)
+        #print(f'u_tensor3 size: {u_tensor3.size()}')
+        #print('u_p', self.u_p)
 #        print('u_tensor3 ', u_tensor3)
         
     
         lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size(0), -1, -1)
 #        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
-        print('lambda_p', self.lambda_p)
+        #print('lambda_p', self.lambda_p)
     
         theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids) # NxK
         
@@ -239,7 +241,7 @@ class VaDE(nn.Module):
 #                          torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3) +
 #                            (Z-u_tensor3)**2/(2*lambda_tensor3), 
 #                                    dim=1)) + 1e-10 # NxK
-        if debug:
+        if self.debug:
             print(f"pcz1 = {pcz1}") 
             print(f"pcz2 = {pcz2}")
             print(f"pcz1 - pcz2 {pcz1 - pcz2}")
@@ -268,7 +270,7 @@ class VaDE(nn.Module):
         
 
         # Normalise by same number of elements as in reconstruction
-        if debug:
+        if self.debug:
             print(f"x.size() = {x.size()}")
             print(f"SSE = {SSE}")
             print(f"logpzc = {logpzc}")
@@ -363,10 +365,11 @@ class VaDE(nn.Module):
             inputs = Variable(inputs)
             # inputs are the orginal images (in batches (why 4, not 2?))
             z, outputs, mu, logvar = self.forward(inputs)
-            print(f'z size : {z.size()}')
-            print(f'outputs size : {outputs.size()}')
-            print(f'inputs size : {inputs.size()}')
-            print(f'mu size : {mu.size()}')
+            if self.debug:
+                print(f'z size : {z.size()}')
+                print(f'outputs size : {outputs.size()}')
+                print(f'inputs size : {inputs.size()}')
+                print(f'mu size : {mu.size()}')
             loss = self.loss_function(outputs, inputs, z, mu, logvar, debug=True)
             valid_loss += loss.data[0]*len(inputs)
             # total_loss += valid_recon_loss.data[0] * inputs.size()[0]
