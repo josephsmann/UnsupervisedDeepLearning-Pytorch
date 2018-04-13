@@ -8,5 +8,10 @@ dataset/*
 # ignore results/
 results/*
 
+# ignore .pt
+*.pt
+
 # ignore run-* bash and output
 run-*
+
+udlp/clustering/.ipynb_checkpoints/*

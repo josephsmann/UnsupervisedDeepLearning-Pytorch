@@ -50,8 +50,9 @@ def log_likelihood_samplesImean_sigma(samples, mu, logvar):
 
 class VaDE(nn.Module):
     def __init__(self, input_dim=784, z_dim=10, n_centroids=10, binary=True,
-        encodeLayer=[500,500,2000], decodeLayer=[2000,500,500]):
+        encodeLayer=[500,500,2000], decodeLayer=[2000,500,500], debug=False):
         super(self.__class__, self).__init__()
+        self.debug = debug
         self.z_dim = z_dim
         self.n_centroids = n_centroids
         self.encoder = buildNetwork([input_dim] + encodeLayer)
@@ -66,7 +67,17 @@ class VaDE(nn.Module):
         self.create_gmmparam(n_centroids, z_dim)
 
     def create_gmmparam(self, n_centroids, z_dim):
+        
+        # there is a centroid for each class of brain, like there is centroid
+        # for each numeral 
+        
+        # which means for each centroid there will be a different latent vector z
+        # each latent vector z is a sample from mu_c, sigma_c 
+        
         # theta.size() == [n_centroids]
+        # might theta be the weight of the centroid eg. pi
+        
+        # all centroids are given equal weighting at beginning
         self.theta_p = nn.Parameter(torch.ones(n_centroids)/n_centroids)
         
         # u_p.size() == [z_dim, n_centroids]
@@ -94,17 +105,24 @@ class VaDE(nn.Module):
         # puts the module in eval mode
         self.eval()
         data = []
+        print('starting forward loop ***************')
         for batch_idx, inputs in enumerate(dataloader):
             inputs = inputs.view(inputs.size(0), -1).float()
             if use_cuda:
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
             z, outputs, mu, logvar = self.forward(inputs)
-            
+            if self.debug and (batch_idx % 200 == 0):
+                print(f'z size = {z.size()}')
+                print(f'outputs size = {outputs.size()}')
+                print(f'mu size = {mu.size()}')
+                print(f'logvar size = {logvar.size()}')
+          
             # i think this moves data back to cpu memory?
             # and appends it to the data list
             data.append(z.data.cpu().numpy())
-
+  
+        print('ending forward loop ***************')
         
         data = np.concatenate(data)
         if self.debug:
@@ -113,9 +131,17 @@ class VaDE(nn.Module):
         gmm.fit(data)
         # u_p are the means of the centroids [z_dim, num_centroids]
         # lambda_p are the covariances of the centroids
+        
+        # gmm should return a matrix (features x centroids) x [mean, Sigma]
+        
         self.u_p.data.copy_(torch.from_numpy(gmm.means_.T.astype(np.float32)))
         self.lambda_p.data.copy_(torch.from_numpy(gmm.covariances_.T.astype(np.float32)))
-
+        if self.debug:
+            print(f'gmm.means_ {gmm.means_}')
+            print(f"self.u_p = {self.u_p.shape}")
+#            print(f"self.u_p = {self.u_p.shape}")
+            print(f"self.u_p = {self.u_p}")
+            
     def reparameterize(self, mu, logvar):
         """
         interestingly, we add noise (eps.mul(std).add_(mu)) only during training  
@@ -150,6 +176,8 @@ class VaDE(nn.Module):
         """
         gamma is our P(c|x) or something
         """
+        for k,v in zip("z z_mean z_log_var".split( ),[z, z_mean, z_log_var]):
+            print(k + " size() = ", v.size())
         Z = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
         z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
         z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
@@ -166,26 +194,39 @@ class VaDE(nn.Module):
     def loss_function(self, recon_x, x, z, z_mean, z_log_var, debug=False):
         """
         loss_function is the ELBO + reconstruction error
+        
+        u_p are the centroid means
+        lambda_p are the centroid variances
         """
         Z = z.unsqueeze(2).expand(-1,-1,self.n_centroids) # this is better
+        print(f'Z shape {Z.size()}')
+        print('Z', Z)
         if debug:
             Z1 = z.unsqueeze(2).expand(z.size()[0], z.size()[1], self.n_centroids) # NxDxK
             assert((Z == Z1).all())
         
         z_mean_t = z_mean.unsqueeze(2).expand(-1,-1, self.n_centroids)
+        print(f'z_mean size {z_mean.size()}')
 #        z_mean_t = z_mean.unsqueeze(2).expand(z_mean.size()[0], z_mean.size()[1], self.n_centroids)
 
         z_log_var_t = z_log_var.unsqueeze(2).expand(-1,-1, self.n_centroids)
+        print(f'z_log_var size: {z_log_var.size()}')
 #       z_log_var_t = z_log_var.unsqueeze(2).expand(z_log_var.size()[0], z_log_var.size()[1], self.n_centroids)
 
         u_tensor3 = self.u_p.unsqueeze(0).expand(z.size(0), -1, -1) # NxDxK
 #        u_tensor3 = self.u_p.unsqueeze(0).expand(z.size()[0], self.u_p.size()[0], self.u_p.size()[1]) # NxDxK
+        print(f'u_tensor3 size: {u_tensor3.size()}')
+        print('u_p', self.u_p)
+#        print('u_tensor3 ', u_tensor3)
+        
     
         lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size(0), -1, -1)
 #        lambda_tensor3 = self.lambda_p.unsqueeze(0).expand(z.size()[0], self.lambda_p.size()[0], self.lambda_p.size()[1])
-        
+        print('lambda_p', self.lambda_p)
+    
         theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids) # NxK
         
+        # so pcz is short for p(c|z), I think
         pcz1 = torch.log(theta_tensor2) 
         pcz2_1 = 0.5*torch.log(2*math.pi*lambda_tensor3)
         pcz2_2 = (Z-u_tensor3)**2/(2*lambda_tensor3)
@@ -199,7 +240,8 @@ class VaDE(nn.Module):
 #                            (Z-u_tensor3)**2/(2*lambda_tensor3), 
 #                                    dim=1)) + 1e-10 # NxK
         if debug:
-            print(f"pcz1 = {pcz1}")
+            print(f"pcz1 = {pcz1}") 
+            print(f"pcz2 = {pcz2}")
             print(f"pcz1 - pcz2 {pcz1 - pcz2}")
             print(f"pcz2 = {pcz2}")
             print(f"p_c_z = {p_c_z}")
@@ -319,8 +361,12 @@ class VaDE(nn.Module):
             if use_cuda :
                 inputs = inputs.cuda()
             inputs = Variable(inputs)
+            # inputs are the orginal images (in batches (why 4, not 2?))
             z, outputs, mu, logvar = self.forward(inputs)
-
+            print(f'z size : {z.size()}')
+            print(f'outputs size : {outputs.size()}')
+            print(f'inputs size : {inputs.size()}')
+            print(f'mu size : {mu.size()}')
             loss = self.loss_function(outputs, inputs, z, mu, logvar, debug=True)
             valid_loss += loss.data[0]*len(inputs)
             # total_loss += valid_recon_loss.data[0] * inputs.size()[0]
