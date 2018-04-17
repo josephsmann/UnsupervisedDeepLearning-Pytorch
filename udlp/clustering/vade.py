@@ -277,19 +277,20 @@ class VaDE(nn.Module):
 
 
 # this is correct: it is p(c)p(z|c) = theta * N(z|u_c, sigma_c)
-        log_tot_mass = -0.5*torch.log(2*math.pi*lambda_tensor3)
-        log_num = -1*(Z-u_tensor3)**2/(2*lambda_tensor3)
+        # log p(z|c)
+        log_norm = -0.5 * (torch.log(2* math.pi * lambda_tensor3) + (Z - u_tensor3)**2/lambda_tensor3 )
+        # log p(c)p(z|c)
         p_c_z = torch.exp(torch.log(theta_tensor2) +  # + -() ..
-                          torch.sum(log_tot_mass + log_num, dim=1)) + 1e-10 # NxK
+                          torch.sum(log_norm, dim=1)) + 1e-10 # NxK
         if self.debug:
             #            print(f"lambda_p = {self.lambda_p}")
             print(f"p_c_z = {p_c_z}")
-            print(f"log_tot_mass.max() = {log_tot_mass.max()}")
-            print(f"log_num.max() = {log_num.max()}")
-            print(f"log_tot_mass.min() = {log_tot_mass.min()}")
-            print(f"log_num.min() = {log_num.min()}")
-            print(f"N() = - log_tot_mass - log_num = {(- log_tot_mass - log_num)[:,:5,:]}")
-            print(f"torch.sum(log_tot_mass + log_num, 1) = {torch.sum(log_tot_mass + log_num, 1)}")
+            print(f"log_norm.max() = {log_norm.max()}")
+          #  print(f"log_num.max() = {log_num.max()}")
+          #  print(f"log_tot_mass.min() = {log_tot_mass.min()}")
+          #  print(f"log_num.min() = {log_num.min()}")
+          #  print(f"N() = - log_tot_mass - log_num = {(- log_tot_mass - log_num)[:,:5,:]}")
+           # print(f"torch.sum(log_tot_mass + log_num, 1) = {torch.sum(log_tot_mass + log_num, 1)}")
             print(f"theta_tensor2.abs().max() {theta_tensor2.abs().max()}")
         # p_c_z not used below this line... so gamma is a normalized p_c_z
         
