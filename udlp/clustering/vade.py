@@ -102,6 +102,7 @@ class VaDE(nn.Module):
         """
         after VaDE object is initialized the user calls this,
         and then the fit method
+        and that is the _only_ time it is called.
 
         gmm need to be initialized properly to get them to grow properly
 
@@ -275,63 +276,21 @@ class VaDE(nn.Module):
 #        theta_tensor2 = self.theta_p.unsqueeze(0).expand(z.size()[0], self.n_centroids)  # NxK
 
 
-############ all to calculate gamma . ******************************
-        # so pcz is short for p(c|z), I think
-        # nope. cuz 
-        log_pcz1 = torch.log(theta_tensor2)
-
-        # pcz2 is a problem...
-#        def normpdf(x, mean, sd):
-#            var = float(sd)**2
-#            pi = 3.1415926
-#            denom = (2*pi*var)**.5
-#            num = math.exp(-(float(x)-float(mean))**2/(2*var))
-#            return num/denom
-
-        # log denom
-        # NxDxK
-        log_denom = 0.5 * torch.log(2 * math.pi * lambda_tensor3)
-
-        # num (not log num!) - i added torch log ******* CAREFUL : wasn't lambda == log_var ??
-        # this should be negative, inside the log no? 
-        # just added '-'
-        log_num = torch.log(- (Z - u_tensor3)**2 / (2 * lambda_tensor3)
-                            )  # eq 12 - pcz2 is just the pdf of Z
-
-        # changing sum to mean... big hack, that seems to have worked, and
-        # now I changed it back to sum...
-        # I change "+" to "-" ...
-        # with sum: log_pcz2 is the likelihood of the of all the \Pi_i p(z_i|c)
-        log_pcz2 = torch.sum(log_num - log_denom, dim=1)
-
-        ### the original pcz2 
-#        torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3) +   # i think this is wrong
-#                            (Z-u_tensor3)**2/(2*lambda_tensor3),
-#                                    dim=1)
-
-        # current problem: exist entries for which the diff between pcz1 ad pcz2 are too big
-        # pcz1 are all the same, so let's look at pcz2
-        # which depends heavily on lambda_p
-
-        # BUT error is also dependent on the number of dimensions in z
-        # 
-        # changing - -> +
-#        p_c_z = torch.exp(log_pcz1 - log_pcz2) + 1e-10
-        p_c_z = torch.exp(log_pcz1 + log_pcz2) + 1e-10
-
-#        p_c_z = torch.exp(torch.log(theta_tensor2) -
-#                          torch.sum(0.5*torch.log(2*math.pi*lambda_tensor3) +
-#                            (Z-u_tensor3)**2/(2*lambda_tensor3),
-#                                    dim=1)) + 1e-10 # NxK
+# this is correct: it is p(c)p(z|c) = theta * N(z|u_c, sigma_c)
+        log_tot_mass = -0.5*torch.log(2*math.pi*lambda_tensor3)
+        log_num = -1*(Z-u_tensor3)**2/(2*lambda_tensor3)
+        p_c_z = torch.exp(torch.log(theta_tensor2) +  # + -() ..
+                          torch.sum(log_tot_mass + log_num, dim=1)) + 1e-10 # NxK
         if self.debug:
             #            print(f"lambda_p = {self.lambda_p}")
-            print(f"log_pcz1 = {log_pcz1}")
-            print(f"log_num = {log_num[:2]}")
-            print(f"log_denom = {log_denom[:2]}")
-            print(f"log_pcz1 - log_pcz2 {log_pcz1 - log_pcz2}")
-            print(f"log_pcz2 = {log_pcz2}")
             print(f"p_c_z = {p_c_z}")
-
+            print(f"log_tot_mass.max() = {log_tot_mass.max()}")
+            print(f"log_num.max() = {log_num.max()}")
+            print(f"log_tot_mass.min() = {log_tot_mass.min()}")
+            print(f"log_num.min() = {log_num.min()}")
+            print(f"N() = - log_tot_mass - log_num = {(- log_tot_mass - log_num)[:,:5,:]}")
+            print(f"torch.sum(log_tot_mass + log_num, 1) = {torch.sum(log_tot_mass + log_num, 1)}")
+            print(f"theta_tensor2.abs().max() {theta_tensor2.abs().max()}")
         # p_c_z not used below this line... so gamma is a normalized p_c_z
         
         # see eq 16 (perfect match) ... qcx == pcz = VVV (only if p_c_z really means p(c)*p(z|c))
@@ -363,6 +322,8 @@ class VaDE(nn.Module):
 
         # Normalise by same number of elements as in reconstruction
         if self.debug:
+            print(f"gamma.shape = {gamma.shape}")
+            print(f"gamma = {gamma}")
             print(f"x.size() = {x.size()}")
             print(f"SSE = {SSE}")
             print(f"logpzc = {logpzc}")
