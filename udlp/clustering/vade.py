@@ -13,6 +13,21 @@ import numpy as np
 import math
 from sklearn.mixture import GaussianMixture
 
+def jlog_norm(x, u, s2):
+    r = -0.5 * (torch.log(2*math.pi*s2) 
+                             + (x-u)**2 / (s2))
+    ret =  torch.exp(r) 
+    ret_cat = torch.cat((ret,x,u,s2),-1)
+    if self.debug:
+        print(ret_cat.shape)
+        print(mask.shape)
+        print(mask.sum())
+        first_n = 6
+        print( torch.stack((ret[mask],
+                            x[mask],
+                            u[mask],
+                            s2[mask]))[:, :first_n])
+    return r
 
 def cluster_acc(Y_pred, Y):
     from sklearn.utils.linear_assignment_ import linear_assignment
@@ -48,10 +63,12 @@ def adjust_learning_rate(init_lr, optimizer, epoch):
 log2pi = math.log(2 * math.pi)
 
 
+# this func used in one func, that is not used
 def log_likelihood_samples_unit_gaussian(samples):
     return -0.5 * log2pi * samples.size()[1] - torch.sum(0.5 * (samples)**2, 1)
 
 
+# this func used in one func, that is not used
 def log_likelihood_samplesImean_sigma(samples, mu, logvar):
     return -0.5 * log2pi * samples.size()[1] - torch.sum(0.5 * (samples - mu)**2 / torch.exp(logvar) + 0.5 * logvar, 1)
 
@@ -278,7 +295,8 @@ class VaDE(nn.Module):
 
 # this is correct: it is p(c)p(z|c) = theta * N(z|u_c, sigma_c)
         # log p(z|c)
-        log_norm = -0.5 * (torch.log(2* math.pi * lambda_tensor3) + (Z - u_tensor3)**2/lambda_tensor3 )
+        log_norm = jlog_norm(Z,u_tensor3,lambda_tensor3)
+#        log_norm = -0.5 * (torch.log(2* math.pi * lambda_tensor3) + (Z - u_tensor3)**2/lambda_tensor3 )
         # log p(c)p(z|c)
         p_c_z = torch.exp(torch.log(theta_tensor2) +  # + -() ..
                           torch.sum(log_norm, dim=1)) + 1e-10 # NxK
@@ -504,7 +522,8 @@ class VaDE(nn.Module):
                 sample = self.decode(sample).cpu()
                 save_image(sample.data.view(64, 1, 28, 28),
                            'results/vae/sample/sample_' + str(epoch) + '.png')
-
+                
+    # this func not apparently used..
     def log_marginal_likelihood_estimate(self, x, num_samples):
         weight = torch.zeros(x.size(0))
         for i in range(num_samples):
