@@ -118,11 +118,7 @@ class VaDE(nn.Module):
 #        self.encoder = buildNetwork([input_dim] + encodeLayer)
         self.encoder = buildEncoder()
 #        self.decoder = buildNetwork([z_dim] + decodeLayer)
-        ## so this does need to be fixed because if my last batch
-        ## isn't full it messes everything up...
-        ## maybe this can be set later ...
         last_encoder_dim = 8 * 9 * 11 
-        ######## can't do this cuz it conflicts with how are pretrained model is named
         self.decoder = buildDecoder()
         
         self._pre_decoder = nn.Linear(self.z_dim, last_encoder_dim)
@@ -131,7 +127,6 @@ class VaDE(nn.Module):
         self._enc_mu = nn.Linear(last_encoder_dim, z_dim)
         self._enc_log_sigma = nn.Linear(last_encoder_dim, z_dim)
 #        self._dec = nn.Linear(decodeLayer[-1], input_dim)
-        # don't think we need this...
         self._dec = nn.Linear(last_encoder_dim, input_dim) 
         ##### THIS IS IMPORTANT !! We're not doing binary and I don't think this code handles it.
         self._dec_act = None
@@ -315,6 +310,11 @@ class VaDE(nn.Module):
         
         
         """
+        # flatten x and recon_x
+        x = x.view(x.size(0),-1)
+        recon_x = recon_x.view(recon_x.size(0),-1)
+        
+        
         # NxD -> NxDxK
         Z = z.unsqueeze(2).expand(-1, -1, self.n_centroids)  # this is better
         #print(f'Z shape {Z.size()}')
@@ -374,7 +374,8 @@ class VaDE(nn.Module):
 
         # so this is wrong because we will need to some Monte Carlo sampling or something 
         # see eq 2 in section 3.1
-        SSE = torch.mean((x - recon_x)**2, 1)
+        ## this returns 3 dim
+        SSE = torch.mean((x - recon_x)**2, dim=1)
         
         # eq 5 ? N(z| u_c, sigma_c )
         logpzc = torch.sum(0.5 * gamma * torch.sum(math.log(2 * math.pi) + torch.log(lambda_tensor3) +
@@ -462,7 +463,7 @@ class VaDE(nn.Module):
         """
         x is a 4d matrix of which the last 2 are an image
         """
-        #print(f'x.shape {x.shape}')
+        print(f'x.shape {x.shape}')
         
         # h is the encoded image, it is 4d too
         h = self.encoder(x)
@@ -510,7 +511,8 @@ class VaDE(nn.Module):
         self.load_state_dict(model_dict)
 
     def fit(self, trainloader, validloader, lr=0.001, batch_size=128, num_epochs=10,
-            visualize=False, anneal=False):
+            visualize=False, anneal=False, fit_debug=None):
+        self.debug=fit_de
         use_cuda = torch.cuda.is_available()
         if use_cuda:
             self.cuda()
@@ -567,7 +569,7 @@ class VaDE(nn.Module):
             Y = []
             Y_pred = []
             for batch_idx, inputs in enumerate(validloader):  # remove labels
-                inputs = inputs.view(inputs.size(0), -1).float()
+                #inputs = inputs.view(inputs.size(0), -1).float()
                 if use_cuda:
                     inputs = inputs.cuda()
                 inputs = Variable(inputs)
