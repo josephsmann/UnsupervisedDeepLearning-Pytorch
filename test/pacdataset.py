@@ -4,7 +4,6 @@ import nibabel as nib
 from helperFunctions2 import get_experiment_data
 import pandas as pd
 
-
 class PacDataset(Dataset):
     """Pac  dataset. - taking one slice out of each image """
     @staticmethod
@@ -38,5 +37,11 @@ class PacDataset(Dataset):
         file_id = self.train0_df.iloc[idx]['file_id']
         img_data = PacDataset._jload(file_id)
         
-        inputs = torch.Tensor(img_data[:, :, z_cut].flatten())
+        # we don't want to flatten this for CNN
+        inputs = torch.Tensor(img_data[:, :, z_cut])# .flatten())
+        
+        # removed normalization for now
+        #inputs = (inputs - inputs.mean()) / inputs.std()
+        inputs = torch.unsqueeze(inputs, 0)
+        assert(inputs.shape[0] == 1)
         return inputs
